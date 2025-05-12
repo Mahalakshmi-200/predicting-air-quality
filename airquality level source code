@@ -1,0 +1,138 @@
+# 1. Imports and Setup
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+import warnings
+warnings.filterwarnings("ignore")
+
+# 2. Load Dataset
+df = pd.read_csv("/content/air_quality_level_dataset.csv")
+print(df)
+print("Initial dataset shape:", df.shape)
+
+# 3. Initial Exploration
+      print(df.info())
+print(df.describe())
+print(df['AQI Level'].value_counts())
+
+# Convert Date column
+df['Date'] = pd.to_datetime(df['Date'])
+
+# 4. Data Preprocessing
+
+# No missing values but check anyway
+df = df.drop_duplicates()
+df.reset_index(drop=True, inplace=True)
+
+# Encode target column
+label_encoder = LabelEncoder()
+df['AQI_Level_Code'] = label_encoder.fit_transform(df['AQI Level'])
+
+# Drop unused columns
+df_clean = df.drop(['Date', 'AQI Level'], axis=1)
+
+# Features and target
+X = df_clean.drop('AQI_Level_Code', axis=1)
+y = df_clean['AQI_Level_Code']
+
+# Feature scaling
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# 5. EDA (Visuals)
+
+def show_eda():
+    plt.figure(figsize=(10, 6))
+    sns.countplot(x='AQI Level', data=df)
+    plt.title("AQI Level Distribution")
+    plt.savefig("eda_aqi_level.png")
+
+    plt.figure(figsize=(10, 6))
+    # Calculate correlation only for numerical columns
+    numerical_df = df.select_dtypes(include=np.number)  
+    sns.heatmap(numerical_df.corr(), annot=True, cmap="coolwarm")
+    plt.title("Correlation Heatmap")
+    plt.savefig("eda_heatmap.png")
+
+show_eda()
+
+# 6. Feature Engineering
+# Add new pollutant index feature
+df['Pollution_Index'] = df[['PM2.5', 'PM10', 'NO2', 'SO2', 'CO', 'O3']].mean(axis=1)
+
+X = df[['PM2.5', 'PM10', 'NO2', 'SO2', 'CO', 'O3', 'Temperature', 'Humidity', 'Wind Speed', 'Pollution_Index']]
+y = df['AQI_Level_Code']
+X_scaled = scaler.fit_transform(X)
+
+# 7. Model Building
+
+X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.3, random_state=42)
+
+# Logistic Regression
+lr = LogisticRegression()
+lr.fit(X_train, y_train)
+lr_preds = lr.predict(X_test)
+
+# Random Forest
+rf = RandomForestClassifier()
+rf.fit(X_train, y_train)
+rf_preds = rf.predict(X_test)
+
+# Support Vector Machine
+svm = SVC()
+svm.fit(X_train, y_train)
+svm_preds = svm.predict(X_test)
+
+# 8. Model Evaluation
+
+def evaluate_model(name, y_true, y_pred):
+    print(f"\n{name} Evaluation")
+    print("Accuracy:", accuracy_score(y_true, y_pred))
+    print("Confusion Matrix:\n", confusion_matrix(y_true, y_pred))
+    print("Classification Report:\n", classification_report(y_true, y_pred))
+
+evaluate_model("Logistic Regression", y_test, lr_preds)
+evaluate_model("Random Forest", y_test, rf_preds)
+evaluate_model("SVM", y_test, svm_preds)
+
+
+# 9. Streamlit Deployment Code
+	
+def run_streamlit():
+    st.title("Air Quality Prediction App")
+    st.markdown("### Predict AQI Level based on pollution & weather features.")
+
+    pm25 = st.slider("PM2.5", 0.0, 200.0, 50.0)
+    pm10 = st.slider("PM10", 0.0, 200.0, 50.0)
+    no2 = st.slider("NO2", 0.0, 100.0, 20.0)
+    so2 = st.slider("SO2", 0.0, 50.0, 10.0)
+    co = st.slider("CO", 0.0, 3.0, 1.0)
+    o3 = st.slider("O3", 0.0, 100.0, 30.0)
+    temp = st.slider("Temperature", 0.0, 50.0, 25.0)
+    humid = st.slider("Humidity", 0.0, 100.0, 50.0)
+    wind = st.slider("Wind Speed", 0.0, 15.0, 5.0)
+
+    poll_index = np.mean([pm25, pm10, no2, so2, co, o3])
+    sample = scaler.transform([[pm25, pm10, no2, so2, co, o3, temp, humid, wind, poll_index]])
+
+    model = RandomForestClassifier()
+    model.fit(X_scaled, y)
+    pred = model.predict(sample)[0]
+    pred_label = label_encoder.inverse_transform([pred])[0]
+
+    if st.button("Predict AQI Level"):
+        st.success(f"Predicted AQI Level: {pred_label}")
+
+
+
+# 10. Main Function
+
+if __name__ == "__main__":
+    run_streamlit()
